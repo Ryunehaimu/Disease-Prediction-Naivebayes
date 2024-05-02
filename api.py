@@ -1,46 +1,52 @@
-from flask import Flask, render_template, request
+from flask import Flask, request, render_template
 import pandas as pd
-import modelai
+import joblib
 
 app = Flask(__name__)
 
 @app.route('/')
 def index():
-    return render_template('diagnosis.blade.php')
+    # render your HTML template here
+    return render_template('index.html')
 
-@app.route('/predict', methods=['POST'])
-def predict():
-    # Mendapatkan data dari formulir web
-    data = request.form.to_dict()
-    
-    # Membuat DataFrame dari data yang diterima
-    new_data = pd.DataFrame([data])
-    
-    # Membaca file CSV yang berisi data asli
-    original_data = pd.read_csv('new_data.csv')
+@app.route('/submit', methods=['POST'])
+def submit():
+    # Mendapatkan nilai gejala dari form
+    gejala1 = request.form['gejala1']
+    gejala2 = request.form['gejala2']
+    gejala3 = request.form['gejala3']
 
-    #menghapus hasil diagnosis sebelumnya
-    original_data['prognosis'] = ''
-    
-    # Menemukan keluhan yang sesuai dalam colum dan mengisi dengan 1 , untuk keluhan yang tidak dialami akan disi 0
-    for column, value in data.items():
-        if column in original_data.columns:
-            original_data.loc[original_data[column] == value, column] = 1
-        else:
-            original_data[column] = 0
-    
-    # Menyimpan data yang telah diperbarui ke file CSV
-    original_data.to_csv('new_data.csv', index=False)
-    
-    # Memanggil fungsi dari modelai.py untuk memprediksi prognosis
-    modelai.main()
-    
-    # Membaca file CSV yang telah diperbarui dengan prognosis
-    updated_data = pd.read_csv('new_data.csv')
-    prognosis = updated_data['prognosis']
-    
-    # Mengembalikan hasil prognosis ke web
-    return render_template('diagnosis.blade.php', prognosis=prognosis)
+    # Baca file Excel
+    df = pd.read_csv('new_data.csv')
+
+    # Load model
+    model = joblib.load('health_model.pkl')
+
+    # Hapus nilai kolom prognosis
+    df['prognosis'] = ''
+
+    # Isi seluruh dataframe dengan nilai 0
+    df = df.applymap(lambda x: 0)
+
+    # Isi kolom yang sesuai dengan gejala1, gejala2, dan gejala3 dengan 1
+    df.loc[:, gejala1] = 1
+    df.loc[:, gejala2] = 1
+    df.loc[:, gejala3] = 1
+
+    # Prediksi prognosis berdasarkan gejala yang dimasukkan
+    new_predictions = model.predict(df.drop('prognosis', axis=1))
+
+    # Assign the predictions to the 'prognosis' column
+    df['prognosis'] = new_predictions
+
+    # Save the updated new_data to a new CSV file
+    df.to_csv('new_data.csv', index=False)
+
+    # Membuat teks yang berisi informasi prognosis dan gejala yang dipilih
+    result_text = "Prognosis: {}\nGejala yang dipilih: {}, {}, {}".format(', '.join(new_predictions), gejala1, gejala2, gejala3)
+
+    # Return prognosis and selected symptoms
+    return result_text
 
 if __name__ == '__main__':
     app.run(debug=True)
