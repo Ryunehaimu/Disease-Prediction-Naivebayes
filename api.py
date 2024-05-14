@@ -12,9 +12,11 @@ def index():
 @app.route('/submit', methods=['POST'])
 def submit():
     # Mendapatkan nilai gejala dari form
-    gejala1 = request.form['gejala1']
-    gejala2 = request.form['gejala2']
-    gejala3 = request.form['gejala3']
+    gejala = request.form.getlist('gejala')
+
+    # Memastikan jumlah gejala antara 3 dan 5
+    if len(gejala) < 3 or len(gejala) > 5:
+        return "Jumlah gejala harus antara 3 dan 5."
 
     # Baca file Excel
     df = pd.read_csv('new_data.csv')
@@ -28,10 +30,9 @@ def submit():
     # Isi seluruh dataframe dengan nilai 0
     df = df.applymap(lambda x: 0)
 
-    # Isi kolom yang sesuai dengan gejala1, gejala2, dan gejala3 dengan 1
-    df.loc[:, gejala1] = 1
-    df.loc[:, gejala2] = 1
-    df.loc[:, gejala3] = 1
+    # Isi kolom yang sesuai dengan gejala dengan 1
+    for gejala_item in gejala:
+        df.loc[:, gejala_item] = 1
 
     # Prediksi prognosis berdasarkan gejala yang dimasukkan
     new_predictions = model.predict(df.drop('prognosis', axis=1))
@@ -43,7 +44,7 @@ def submit():
     df.to_csv('new_data.csv', index=False)
 
     # Membuat teks yang berisi informasi prognosis dan gejala yang dipilih
-    result_text = "Prognosis: {}\nGejala yang dipilih: {}, {}, {}".format(', '.join(new_predictions), gejala1, gejala2, gejala3)
+    result_text = "Prognosis: {}\\nGejala yang dipilih: {}".format(', '.join(new_predictions), ', '.join(gejala))
 
     # Return prognosis and selected symptoms
     return result_text
