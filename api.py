@@ -1,52 +1,46 @@
-from flask import Flask, request, render_template
+from flask import Flask, request, render_template, jsonify
+from flask_cors import CORS
 import pandas as pd
 import joblib
 
 app = Flask(__name__)
+CORS(app)  # Enables CORS for all routes
 
 @app.route('/')
 def index():
-    # render your HTML template here
     return render_template('index.html')
 
 @app.route('/submit', methods=['POST'])
 def submit():
-    # Mendapatkan nilai gejala dari form
-    gejala1 = request.form['gejala1']
-    gejala2 = request.form['gejala2']
-    gejala3 = request.form['gejala3']
+    gejala_keys = ['gejala1', 'gejala2', 'gejala3', 'gejala4', 'gejala5']
+    gejala_values = [request.form.get(key) for key in gejala_keys if request.form.get(key)]
+    
+    if len(gejala_values) < 3:
+        return jsonify({"error": "Anda harus memasukkan minimal 3 gejala"}), 400
 
-    # Baca file Excel
+    # Load data and model
     df = pd.read_csv('new_data.csv')
-
-    # Load model
     model = joblib.load('health_model.pkl')
-
-    # Hapus nilai kolom prognosis
+    
+    # Prepare the data for prediction
     df['prognosis'] = ''
-
-    # Isi seluruh dataframe dengan nilai 0
     df = df.applymap(lambda x: 0)
+    for gejala in gejala_values:
+        if gejala in df.columns:
+            df.loc[:, gejala] = 1
 
-    # Isi kolom yang sesuai dengan gejala1, gejala2, dan gejala3 dengan 1
-    df.loc[:, gejala1] = 1
-    df.loc[:, gejala2] = 1
-    df.loc[:, gejala3] = 1
-
-    # Prediksi prognosis berdasarkan gejala yang dimasukkan
+    # Make predictions
     new_predictions = model.predict(df.drop('prognosis', axis=1))
-
-    # Assign the predictions to the 'prognosis' column
     df['prognosis'] = new_predictions
-
-    # Save the updated new_data to a new CSV file
     df.to_csv('new_data.csv', index=False)
 
-    # Membuat teks yang berisi informasi prognosis dan gejala yang dipilih
-    result_text = "Prognosis: {}\nGejala yang dipilih: {}, {}, {}".format(', '.join(new_predictions), gejala1, gejala2, gejala3)
+    # Create response data
+    result_data = {
+        "prognosis": new_predictions.tolist(),  # Convert numpy array to list for JSON serialization
+        "selected_symptoms": gejala_values
+    }
 
-    # Return prognosis and selected symptoms
-    return result_text
+    return jsonify(result_data)
 
 if __name__ == '__main__':
     app.run(debug=True)
