@@ -1,50 +1,77 @@
 import pandas as pd
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, cross_val_score
 from sklearn.naive_bayes import GaussianNB
 from sklearn.metrics import accuracy_score
+from sklearn.feature_selection import SelectKBest, mutual_info_classif, VarianceThreshold
+from sklearn.utils import resample
+from sklearn.preprocessing import StandardScaler
 import joblib
 
-# baca training data set
+# Baca training data set
 training_data = pd.read_csv('training.csv')
 
-# pisahkan colum data
-X_train = training_data.drop('prognosis', axis=1)
-y_train = training_data['prognosis']
+# Pisahkan kolom data
+X = training_data.drop('prognosis', axis=1)
+y = training_data['prognosis']
 
-# baca testing data set
-test_data = pd.read_csv('testing.csv')
+# Menghapus fitur konstan
+selector_variance = VarianceThreshold(threshold=0)
+X = selector_variance.fit_transform(X)
 
-# pisahkan colum data
-X_test = test_data.drop('prognosis', axis=1)
-y_test = test_data['prognosis']
+# Normalisasi fitur
+scaler = StandardScaler()
+X = scaler.fit_transform(X)
 
-# buat model dengan Gaussian Naive Bayes
-model = GaussianNB()
+# Bagi data menjadi data latih dan data uji
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-# Train model
-model.fit(X_train, y_train)
+# Lakukan oversampling pada kelas minoritas
+X_train_resampled, y_train_resampled = resample(X_train, y_train,
+                                                replace=True,
+                                                n_samples=len(X_train)*2,
+                                                random_state=42)
 
-# model mempredik data test
-predictions = model.predict(X_test)
+# Lakukan feature selection
+selector_kbest = SelectKBest(mutual_info_classif, k=15)
+X_train_selected = selector_kbest.fit_transform(X_train_resampled, y_train_resampled)
+X_test_selected = selector_kbest.transform(X_test)
+
+# Buat model dengan Gaussian Naive Bayes dan regularisasi
+model = GaussianNB(var_smoothing=1e-9)
+
+# Lakukan cross-validation untuk memilih model terbaik
+scores = cross_val_score(model, X_train_selected, y_train_resampled, cv=5)
+print("Cross-validation scores:", scores)
+print("Mean cross-validation score:", scores.mean())
+
+# Train model dengan data latih terbaik
+model.fit(X_train_selected, y_train_resampled)
+
+# Model memprediksi data uji
+predictions = model.predict(X_test_selected)
 
 # Save model
 joblib.dump(model, 'health_model.pkl')
 
-# baca data baru yang hanya berisi keluhan
+# Baca data baru yang hanya berisi keluhan
 new_data = pd.read_csv('new_data.csv')
 
-# menghapus colum prognosis dari data new_data karena model tidak dapat membaca colum prognosis di new_data
+# Menghapus kolom prognosis dari data new_data karena model tidak dapat membaca kolom prognosis di new_data
 new_data_features = new_data.drop('prognosis', axis=1)
 
-# predik new_data dengan model yang telah dibikin tadi
-new_predictions = model.predict(new_data_features)
+# Lakukan pra-pemrosesan yang sama pada new_data_features
+new_data_features = selector_variance.transform(new_data_features)
+new_data_features = scaler.transform(new_data_features)
+new_data_selected = selector_kbest.transform(new_data_features)
 
-# assign hasil diatas ke column prognosis
+# Prediksi new_data dengan model yang telah dibuat
+new_predictions = model.predict(new_data_selected)
+
+# Assign hasil prediksi ke kolom prognosis
 new_data['prognosis'] = new_predictions
 new_data.to_csv('new_data.csv', index=False)
 
-# menghitung akurasi model
+# Menghitung akurasi model
 accuracy = accuracy_score(y_test, predictions)
 accuracy_percentage = accuracy * 100
-
 print('Akurasi model:', accuracy_percentage, '%')
